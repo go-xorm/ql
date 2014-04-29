@@ -4,11 +4,12 @@ import (
 	"database/sql"
 	"os"
 	"testing"
-
-	"github.com/go-xorm/xorm"
-	"github.com/go-xorm/xorm/caches"
+	"time"
 
 	_ "github.com/cznic/ql/driver"
+	"github.com/go-xorm/core"
+	"github.com/go-xorm/tests"
+	"github.com/go-xorm/xorm"
 )
 
 var showTestSql = true
@@ -23,38 +24,46 @@ func newQlDriverDB() (*sql.DB, error) {
 	return sql.Open("ql", "./ql.db")
 }
 
-func TestQl(t *testing.T) {
-	engine, err := newQlEngine()
-	defer engine.Close()
-	if err != nil {
-		t.Error(err)
-		return
+func newCache() core.Cacher {
+	return xorm.NewLRUCacher2(xorm.NewMemoryStore(), time.Hour, 1000)
+}
+
+func setEngine(engine *xorm.Engine, useCache bool) {
+	if useCache {
+		engine.SetDefaultCacher(newCache())
 	}
 	engine.ShowSQL = showTestSql
 	engine.ShowErr = showTestSql
 	engine.ShowWarn = showTestSql
 	engine.ShowDebug = showTestSql
+}
 
-	testAll(engine, t)
-	testAll2(engine, t)
-	testAll3(engine, t)
+func TestQl(t *testing.T) {
+	engine, err := newQlEngine()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	defer engine.Close()
+	setEngine(engine, false)
+
+	tests.BaseTestAll(engine, t)
+	tests.BaseTestAll2(engine, t)
+	tests.BaseTestAll3(engine, t)
 }
 
 func TestQlWithCache(t *testing.T) {
 	engine, err := newQlEngine()
-	defer engine.Close()
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	engine.SetDefaultCacher(xorm.NewLRUCacher(caches.NewMemoryStore(), 1000))
-	engine.ShowSQL = showTestSql
-	engine.ShowErr = showTestSql
-	engine.ShowWarn = showTestSql
-	engine.ShowDebug = showTestSql
+	defer engine.Close()
 
-	testAll(engine, t)
-	testAll2(engine, t)
+	setEngine(engine, true)
+
+	tests.BaseTestAll(engine, t)
+	tests.BaseTestAll2(engine, t)
 }
 
 const (
@@ -63,83 +72,88 @@ const (
 )
 
 func BenchmarkQlDriverInsert(t *testing.B) {
-	doBenchDriver(newQlDriverDB, createTableQl, dropTableQl,
-		doBenchDriverInsert, t)
+	tests.DoBenchDriver(newQlDriverDB, createTableQl, dropTableQl,
+		tests.DoBenchDriverInsert, t)
 }
 
 func BenchmarkQlDriverFind(t *testing.B) {
-	doBenchDriver(newQlDriverDB, createTableQl, dropTableQl,
-		doBenchDriverFind, t)
+	tests.DoBenchDriver(newQlDriverDB, createTableQl, dropTableQl,
+		tests.DoBenchDriverFind, t)
 }
 
 func BenchmarkQlNoCacheInsert(t *testing.B) {
 	t.StopTimer()
 	engine, err := newQlEngine()
-	defer engine.Close()
 	if err != nil {
 		t.Error(err)
 		return
 	}
+	defer engine.Close()
+
 	//engine.ShowSQL = true
-	doBenchInsert(engine, t)
+	tests.DoBenchInsert(engine, t)
 }
 
 func BenchmarkQlNoCacheFind(t *testing.B) {
 	t.StopTimer()
 	engine, err := newQlEngine()
-	defer engine.Close()
 	if err != nil {
 		t.Error(err)
 		return
 	}
+	defer engine.Close()
+
 	//engine.ShowSQL = true
-	doBenchFind(engine, t)
+	tests.DoBenchFind(engine, t)
 }
 
 func BenchmarkQlNoCacheFindPtr(t *testing.B) {
 	t.StopTimer()
 	engine, err := newQlEngine()
-	defer engine.Close()
 	if err != nil {
 		t.Error(err)
 		return
 	}
+	defer engine.Close()
 	//engine.ShowSQL = true
-	doBenchFindPtr(engine, t)
+	tests.DoBenchFindPtr(engine, t)
 }
 
 func BenchmarkQlCacheInsert(t *testing.B) {
 	t.StopTimer()
 	engine, err := newQlEngine()
-	defer engine.Close()
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	engine.SetDefaultCacher(NewLRUCacher(NewMemoryStore(), 1000))
-	doBenchInsert(engine, t)
+	defer engine.Close()
+
+	engine.SetDefaultCacher(newCache())
+	tests.DoBenchInsert(engine, t)
 }
 
 func BenchmarkQlCacheFind(t *testing.B) {
 	t.StopTimer()
 	engine, err := newQlEngine()
-	defer engine.Close()
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	engine.SetDefaultCacher(NewLRUCacher(NewMemoryStore(), 1000))
-	doBenchFind(engine, t)
+	defer engine.Close()
+
+	engine.SetDefaultCacher(newCache())
+	tests.DoBenchFind(engine, t)
 }
 
 func BenchmarkQlCacheFindPtr(t *testing.B) {
 	t.StopTimer()
 	engine, err := newQlEngine()
-	defer engine.Close()
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	engine.SetDefaultCacher(NewLRUCacher(NewMemoryStore(), 1000))
-	doBenchFindPtr(engine, t)
+	defer engine.Close()
+
+	engine.SetDefaultCacher(newCache())
+	tests.DoBenchFindPtr(engine, t)
 }

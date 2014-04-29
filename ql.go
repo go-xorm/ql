@@ -1,7 +1,7 @@
 package ql
 
 import (
-	"database/sql"
+	"fmt"
 	"strings"
 
 	"github.com/go-xorm/core"
@@ -11,6 +11,7 @@ var _ core.Dialect = (*ql)(nil)
 
 func init() {
 	core.RegisterDriver("ql", &qlDriver{})
+	core.RegisterDialect("ql", &ql{})
 }
 
 type qlDriver struct {
@@ -24,38 +25,91 @@ type ql struct {
 	core.Base
 }
 
-func (db *ql) Init(uri *core.Uri, drivername, dataSourceName string) error {
-	return db.Base.Init(db, uri, drivername, dataSourceName)
+func (db *ql) Init(d *core.DB, uri *core.Uri, drivername, dataSourceName string) error {
+	return db.Base.Init(d, db, uri, drivername, dataSourceName)
+}
+
+func (db *ql) AndStr() string {
+	return "&&"
+}
+
+func (db *ql) OrStr() string {
+	return "||"
+}
+
+func (db *ql) EqStr() string {
+	return "=="
 }
 
 func (db *ql) SqlType(c *core.Column) string {
 	switch t := c.SQLType.Name; t {
 	case core.Date, core.DateTime, core.TimeStamp, core.Time:
-		return core.Numeric
+		return "time"
 	case core.TimeStampz:
-		return core.Text
+		return "string"
 	case core.Char, core.Varchar, core.TinyText, core.Text, core.MediumText, core.LongText:
-		return core.Text
-	case core.Bit, core.TinyInt, core.SmallInt, core.MediumInt, core.Int, core.Integer, core.BigInt, core.Bool:
-		return core.Integer
+		return "string"
+	case core.Bit, core.TinyInt, core.SmallInt, core.MediumInt, core.Int, core.Integer, core.BigInt:
+		return "int"
+	case core.Bool:
+		return "bool"
 	case core.Float, core.Double, core.Real:
-		return core.Real
+		return "float64"
 	case core.Decimal, core.Numeric:
-		return core.Numeric
+		return "string"
 	case core.TinyBlob, core.Blob, core.MediumBlob, core.LongBlob, core.Bytea, core.Binary, core.VarBinary:
-		return core.Blob
+		return "blob"
 	case core.Serial, core.BigSerial:
 		c.IsPrimaryKey = true
 		c.IsAutoIncrement = true
 		c.Nullable = false
-		return core.Integer
+		return "int64"
 	default:
 		return t
 	}
 }
 
+func (b *ql) CreateIndexSql(tableName string, index *core.Index) string {
+	var unique string
+	var idxName string
+	if index.Type == core.UniqueType {
+		unique = " UNIQUE"
+		idxName = fmt.Sprintf("UQE_%v_%v", tableName, index.Name)
+	} else {
+		idxName = fmt.Sprintf("IDX_%v_%v", tableName, index.Name)
+	}
+	return fmt.Sprintf("CREATE%s INDEX %v ON %v (%v);", unique,
+		idxName, tableName, strings.Join(index.Cols, (",")))
+}
+
+func (b *ql) CreateTableSql(table *core.Table, tableName, storeEngine, charset string) string {
+	var sql string
+	sql = "CREATE TABLE IF NOT EXISTS "
+	if tableName == "" {
+		tableName = table.Name
+	}
+
+	sql += b.Quote(tableName) + " ("
+
+	for _, colName := range table.ColumnsSeq() {
+		col := table.GetColumn(colName)
+		// for ql, no pk, pk is id()
+		if !col.IsPrimaryKey {
+			sql += col.StringNoPk(b)
+			sql = strings.TrimSpace(sql)
+			sql += ", "
+		}
+	}
+
+	return sql[:len(sql)-2] + ");"
+}
+
 func (db *ql) SupportInsertMany() bool {
 	return true
+}
+
+func (b *ql) ShowCreateNull() bool {
+	return false
 }
 
 func (db *ql) QuoteStr() string {
@@ -83,30 +137,50 @@ func (db *ql) IndexOnTable() bool {
 }
 
 func (db *ql) IndexCheckSql(tableName, idxName string) (string, []interface{}) {
-	args := []interface{}{tableName, idxName}
-	return "SELECT Name FROM __Index WHERE TableName == ? and Name == ?", args
+	args := []interface{}{}
+	return "SELECT Name FROM __Index WHERE TableName == \"" + tableName + "\" && Name == \"" + idxName + "\"", args
 }
 
 func (db *ql) TableCheckSql(tableName string) (string, []interface{}) {
-	args := []interface{}{tableName}
-	return "SELECT Name FROM __Table WHERE Name == ?", args
+	args := []interface{}{}
+	return "SELECT Name FROM __Table WHERE Name == \"" + tableName + "\"", args
 }
 
-func (db *ql) ColumnCheckSql(tableName, colName string) (string, []interface{}) {
-	args := []interface{}{tableName, colName}
-	sql := "SELECT Name FROM __Column WHERE TableName == ? and Name == ?"
+/*func (db *ql) ColumnCheckSql(tableName, colName string, isPK bool) (string, []interface{}) {
+	args := []interface{}{}
+	var sql string
+	if isPK {
+		sql = "SELECT \"" + colName + "\" AS Name"
+	} else {
+		sql = "SELECT Name FROM __Column WHERE TableName == \"" + tableName + "\" && Name == \"" + colName + "\""
+	}
 	return sql, args
+}*/
+
+func (db *ql) IsColumnExist(tableName string, col *core.Column) (bool, error) {
+	// since ql always has id() for every table. so we dont' check primary key columns
+	if col.IsPrimaryKey {
+		return true, nil
+	}
+
+	query := "SELECT Name FROM __Column WHERE TableName == \"" + tableName + "\" && Name == \"" + col.Name + "\""
+	rows, err := db.DB().Query(query)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+
+	if rows.Next() {
+		return true, nil
+	}
+	return false, core.ErrNotExist
 }
 
 func (db *ql) GetColumns(tableName string) ([]string, map[string]*core.Column, error) {
-	args := []interface{}{tableName}
-	s := "SELECT Name, Ordinal, Type FROM __Column WHERE TableName == ?"
-	cnn, err := core.Open(db.DriverName(), db.DataSourceName())
-	if err != nil {
-		return nil, nil, err
-	}
-	defer cnn.Close()
-	rows, err := cnn.Query(s, args...)
+	args := []interface{}{}
+	s := "SELECT Name, Ordinal, Type FROM __Column WHERE TableName == \"" + tableName + "\""
+
+	rows, err := db.DB().Query(s, args...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -143,13 +217,7 @@ func (db *ql) GetTables() ([]*core.Table, error) {
 	args := []interface{}{}
 	s := "SELECT Name FROM __Table"
 
-	cnn, err := core.Open(db.DriverName(), db.DataSourceName())
-	if err != nil {
-		return nil, err
-	}
-	defer cnn.Close()
-
-	rows, err := cnn.Query(s, args...)
+	rows, err := db.DB().Query(s, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -171,15 +239,10 @@ func (db *ql) GetTables() ([]*core.Table, error) {
 }
 
 func (db *ql) GetIndexes(tableName string) (map[string]*core.Index, error) {
-	args := []interface{}{tableName}
-	s := "SELECT Name, ColumnName, Unique FROM __Index WHERE TableName == ?"
-	cnn, err := sql.Open(db.DriverName(), db.DataSourceName())
-	if err != nil {
-		return nil, err
-	}
-	defer cnn.Close()
+	args := []interface{}{}
+	s := "SELECT Name, ColumnName, IsUnique FROM __Index WHERE TableName == \"" + tableName + "\""
 
-	rows, err := cnn.Query(s, args...)
+	rows, err := db.DB().Query(s, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -218,6 +281,32 @@ func (db *ql) GetIndexes(tableName string) (map[string]*core.Index, error) {
 	return indexes, nil
 }
 
+// IdFilter filter SQL replace (id) to primary key column name
+type IdFilter struct {
+}
+
+type Quoter struct {
+	dialect core.Dialect
+}
+
+func NewQuoter(dialect core.Dialect) *Quoter {
+	return &Quoter{dialect}
+}
+
+func (q *Quoter) Quote(content string) string {
+	return q.dialect.QuoteStr() + content + q.dialect.QuoteStr()
+}
+
+func (i *IdFilter) Do(sql string, dialect core.Dialect, table *core.Table) string {
+	quoter := NewQuoter(dialect)
+	if table != nil && len(table.PrimaryKeys) == 1 {
+		sql = strings.Replace(sql, "`(id)`", "id()", -1)
+		sql = strings.Replace(sql, quoter.Quote("(id)"), "id()", -1)
+		return strings.Replace(sql, "(id)", "id()", -1)
+	}
+	return sql
+}
+
 func (db *ql) Filters() []core.Filter {
-	return []core.Filter{&core.IdFilter{}, &core.SeqFilter{"$", 1}}
+	return []core.Filter{&IdFilter{}, &core.QuoteFilter{}, &core.SeqFilter{"$", 1}}
 }
