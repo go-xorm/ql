@@ -12,7 +12,7 @@ The below operation cannot be supported because of ql's limitation:
 * Copmosite index and unique index
 * Column's name and Tables' name could not be ql's keywords, you can visit [github.com/cznic/ql](http://github.com/cznic/ql) to check out it.
 
-＃ How to use
+# How to use
 
 Just like other supports of xorm, but you should import the three packages:
 
