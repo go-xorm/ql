@@ -173,7 +173,7 @@ func (db *ql) IsColumnExist(tableName string, col *core.Column) (bool, error) {
 	if rows.Next() {
 		return true, nil
 	}
-	return false, core.ErrNotExist
+	return false, nil
 }
 
 func (db *ql) GetColumns(tableName string) ([]string, map[string]*core.Column, error) {
