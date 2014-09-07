@@ -29,6 +29,16 @@ func (db *ql) Init(d *core.DB, uri *core.Uri, drivername, dataSourceName string)
 	return db.Base.Init(d, db, uri, drivername, dataSourceName)
 }
 
+func (db *ql) IsReserved(name string) bool {
+	//_, ok := qlReservedWords[name]
+	//return ok
+	return false
+}
+
+func (db *ql) Quote(name string) string {
+	return name
+}
+
 func (db *ql) AndStr() string {
 	return "&&"
 }
