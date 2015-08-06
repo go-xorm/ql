@@ -205,14 +205,29 @@ func (db *ql) GetColumns(tableName string) ([]string, map[string]*core.Column, e
 		col.Indexes = make(map[string]bool)
 		col.Nullable = true
 
-		var name string
-		var ordinal, typ int
-		err := rows.Scan(&name, ordinal, typ)
+		var name, typ string
+		var ordinal int
+		err := rows.Scan(&name, &ordinal, &typ)
 		if err != nil {
 			return nil, nil, err
 		}
+
 		col.Name = name
-		//col.SQLType = SQLType{field, 0, 0}
+		if typ == "string" {
+			col.SQLType = core.SQLType{core.Text, 0, 0}
+		} else if typ == "time" {
+			col.SQLType = core.SQLType{core.Time, 0, 0}
+		} else if typ == "bool" {
+			col.SQLType = core.SQLType{core.Bool, 0, 0}
+		} else if typ == "int64" {
+			col.SQLType = core.SQLType{core.BigInt, 0, 0}
+		} else if typ == "float64" {
+			col.SQLType = core.SQLType{core.Double, 0, 0}
+		} else if typ == "blob" {
+			col.SQLType = core.SQLType{core.Blob, 0, 0}
+		} else {
+			panic(fmt.Sprintln(name, "type:", typ))
+		}
 		colsMap[name] = col
 		ordinalMap[name] = ordinal
 	}
@@ -237,7 +252,7 @@ func (db *ql) GetTables() ([]*core.Table, error) {
 
 	tables := make([]*core.Table, 0)
 	for rows.Next() {
-		table := new(core.Table)
+		table := core.NewEmptyTable()
 		var name string
 		err := rows.Scan(&name)
 		if err != nil {
