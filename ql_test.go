@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	_ "github.com/cznic/ql/driver"
 	"github.com/go-xorm/core"
 	"github.com/go-xorm/tests"
 	"github.com/go-xorm/xorm"
+	_ "github.com/lunny/ql/driver"
 )
 
 var showTestSql = true
@@ -90,7 +90,6 @@ func BenchmarkQlNoCacheInsert(t *testing.B) {
 	}
 	defer engine.Close()
 
-	//engine.ShowSQL = true
 	tests.DoBenchInsert(engine, t)
 }
 
