@@ -11,7 +11,9 @@ var _ core.Dialect = (*ql)(nil)
 
 func init() {
 	core.RegisterDriver("ql", &qlDriver{})
-	core.RegisterDialect("ql", &ql{})
+	core.RegisterDialect("ql", func() core.Dialect {
+		return &ql{}
+	})
 }
 
 type qlDriver struct {
@@ -167,13 +169,13 @@ func (db *ql) TableCheckSql(tableName string) (string, []interface{}) {
 	return sql, args
 }*/
 
-func (db *ql) IsColumnExist(tableName string, col *core.Column) (bool, error) {
+func (db *ql) IsColumnExist(tableName string, colName string) (bool, error) {
 	// since ql always has id() for every table. so we dont' check primary key columns
-	if col.IsPrimaryKey {
+	if colName == "id" {
 		return true, nil
 	}
 
-	query := "SELECT Name FROM __Column WHERE TableName == \"" + tableName + "\" && Name == \"" + col.Name + "\""
+	query := "SELECT Name FROM __Column WHERE TableName == \"" + tableName + "\" && Name == \"" + colName + "\""
 	rows, err := db.DB().Query(query)
 	if err != nil {
 		return false, err
