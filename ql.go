@@ -285,7 +285,11 @@ func (db *ql) GetIndexes(tableName string) (map[string]*core.Index, error) {
 			return nil, err
 		}
 
-		//fmt.Println(indexName)
+		if columnName == "id()" {
+			continue
+		}
+
+		//fmt.Println(indexName, columnName, isUnique)
 		if strings.HasPrefix(indexName, "IDX_"+tableName) || strings.HasPrefix(indexName, "UQE_"+tableName) {
 			index.Name = indexName[5+len(tableName) : len(indexName)]
 		} else {
