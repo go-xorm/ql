@@ -38,7 +38,7 @@ func setEngine(engine *xorm.Engine, useCache bool) {
 	engine.ShowDebug = showTestSql
 }
 
-func TestQl(t *testing.T) {
+func TestQlNoCache(t *testing.T) {
 	engine, err := newQlEngine()
 	if err != nil {
 		t.Error(err)
